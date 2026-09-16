@@ -91,9 +91,28 @@ export default function App() {
     else listRef.current?.querySelectorAll<HTMLInputElement>("input")[i + 1]?.focus();
   };
 
+  // 保存先や形式を変えたら、完了済みの行も再びダウンロード対象に戻す
+  const resetDone = () =>
+    setRows((rs) =>
+      rs.map((r) =>
+        r.state === "ok"
+          ? { ...r, state: "wait", text: undefined, path: undefined, percent: undefined }
+          : r,
+      ),
+    );
+
   const pickDir = async () => {
     const dir = await open({ directory: true, defaultPath: outDir || undefined });
-    if (typeof dir === "string") setOutDir(dir);
+    if (typeof dir === "string" && dir !== outDir) {
+      setOutDir(dir);
+      resetDone();
+    }
+  };
+
+  const changeMode = (m: Mode) => {
+    if (m === mode) return;
+    setMode(m);
+    resetDone();
   };
 
   // 未完了（URLあり・完了以外）の行を上から順に落とす
@@ -151,10 +170,10 @@ export default function App() {
         <div className="field">
           <span>形式</span>
           <div className="toggle">
-            <button className={mode === "mp4" ? "on" : ""} onClick={() => setMode("mp4")} disabled={running}>
+            <button className={mode === "mp4" ? "on" : ""} onClick={() => changeMode("mp4")} disabled={running}>
               動画（mp4）
             </button>
-            <button className={mode === "mp3" ? "on" : ""} onClick={() => setMode("mp3")} disabled={running}>
+            <button className={mode === "mp3" ? "on" : ""} onClick={() => changeMode("mp3")} disabled={running}>
               音声（mp3）
             </button>
           </div>
