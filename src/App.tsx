@@ -31,7 +31,6 @@ const newRow = (mode: Mode): Row => ({ id: nextId++, url: "", mode, state: "wait
 const RESET: Partial<Row> = { state: "wait", text: undefined, path: undefined, percent: undefined };
 
 export default function App() {
-  const [mode, setMode] = useState<Mode>("mp4"); // 新しい行の既定。切り替えると全行に適用
   const [rows, setRows] = useState<Row[]>([newRow("mp4")]);
   const [outDir, setOutDir] = useState("");
   const [running, setRunning] = useState(false);
@@ -48,7 +47,10 @@ export default function App() {
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...p } : r)));
 
   useEffect(() => {
-    invoke<string>("default_download_dir").then(setOutDir).catch(() => {});
+    // 保存先は前回選んだものを使う（未選択ならダウンロードフォルダ）
+    const saved = localStorage.getItem("outDir");
+    if (saved) setOutDir(saved);
+    else invoke<string>("default_download_dir").then(setOutDir).catch(() => {});
     invoke<string>("ytdlp_version").then(setVersion).catch((e) => setVersion(String(e)));
     const unlisten = [
       listen<Progress>("dl:progress", (e) => {
@@ -71,12 +73,13 @@ export default function App() {
     inputs?.[inputs.length - 1]?.focus();
   }, [rows.length]);
 
+  // 新しい行は直前の行と同じ形式にする
   const addRow = () => {
     focusNew.current = true;
-    setRows((rs) => [...rs, newRow(mode)]);
+    setRows((rs) => [...rs, newRow(rs[rs.length - 1]?.mode ?? "mp4")]);
   };
   const removeRow = (id: number) =>
-    setRows((rs) => (rs.length === 1 ? [newRow(mode)] : rs.filter((r) => r.id !== id)));
+    setRows((rs) => (rs.length === 1 ? [newRow(rs[0].mode)] : rs.filter((r) => r.id !== id)));
   const setUrl = (id: number, url: string) => patchRow(id, { url, ...RESET });
   const setRowMode = (id: number, m: Mode) => patchRow(id, { mode: m, ...RESET });
 
@@ -101,15 +104,9 @@ export default function App() {
     const dir = await open({ directory: true, defaultPath: outDir || undefined });
     if (typeof dir === "string" && dir !== outDir) {
       setOutDir(dir);
+      localStorage.setItem("outDir", dir);
       resetDone();
     }
-  };
-
-  // 上段の形式: 全行に適用（形式が変わった行は再ダウンロード対象に戻す）
-  const changeMode = (m: Mode) => {
-    if (m === mode) return;
-    setMode(m);
-    setRows((rs) => rs.map((r) => (r.mode === m ? r : { ...r, mode: m, ...RESET })));
   };
 
   // 未完了（URLあり・完了以外）の行を上から順に落とす
@@ -163,26 +160,13 @@ export default function App() {
 
   return (
     <main className="app">
-      <div className="settings">
-        <div className="field">
-          <span>形式（全行に適用）</span>
-          <div className="toggle">
-            <button className={mode === "mp4" ? "on" : ""} onClick={() => changeMode("mp4")} disabled={running}>
-              動画（mp4）
-            </button>
-            <button className={mode === "mp3" ? "on" : ""} onClick={() => changeMode("mp3")} disabled={running}>
-              音声（mp3）
-            </button>
-          </div>
-        </div>
-        <div className="field grow">
-          <span>保存先</span>
-          <div className="row">
-            <code className="path">{outDir || "未選択"}</code>
-            <button onClick={pickDir} disabled={running}>
-              選ぶ
-            </button>
-          </div>
+      <div className="field">
+        <span>保存先</span>
+        <div className="row">
+          <code className="path">{outDir || "未選択"}</code>
+          <button onClick={pickDir} disabled={running}>
+            選ぶ
+          </button>
         </div>
       </div>
 

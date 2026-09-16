@@ -23,21 +23,10 @@ body {
   gap: 16px;
 }
 
-.settings {
-  display: flex;
-  gap: 20px;
-  align-items: flex-end;
-}
-
 .field {
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-
-.field.grow {
-  flex: 1;
-  min-width: 0;
 }
 
 .field > span {
