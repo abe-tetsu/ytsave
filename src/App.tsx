@@ -53,7 +53,11 @@ export default function App() {
     try {
       const path = await invoke<string>("download", { url: u, mode, outDir });
       const name = path.split(/[\\/]/).pop() ?? path;
-      setResult({ ok: true, text: `保存しました: ${name}`, path });
+      setResult({
+        ok: true,
+        text: path === outDir ? "保存しました" : `保存しました: ${name}`,
+        path,
+      });
       setDone({ url: u, mode });
     } catch (e) {
       setResult({ ok: false, text: String(e) });

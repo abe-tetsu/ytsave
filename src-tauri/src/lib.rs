@@ -119,6 +119,8 @@ async fn download(
         .to_string();
 
     let mut c = command(&ytdlp);
+    // Windows で日本語タイトルをパイプに書く際のエンコードエラーを防ぐ（yt-dlp は Python 製）
+    c.env("PYTHONIOENCODING", "utf-8").env("PYTHONUTF8", "1");
     c.args(["--newline", "--progress", "--no-simulate", "--no-playlist", "--no-colors"])
         .arg("--ffmpeg-location")
         .arg(&ffmpeg)
@@ -137,6 +139,7 @@ async fn download(
         ]);
     }
     c.arg(&url).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let out_dir_fallback = out_dir.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
         let mut child = c.spawn().map_err(|e| format!("yt-dlp を起動できません: {e}"))?;
@@ -144,17 +147,19 @@ async fn download(
         let stderr = child.stderr.take().ok_or("stderr が取れません")?;
         *app.state::<Running>().0.lock().unwrap() = Some(child);
 
-        // stderr は別スレッドで読み、エラー行を保持しておく
+        // stderr は別スレッドで読み、ERROR 行と最後の行を保持しておく
         let app2 = app.clone();
         let err_reader = std::thread::spawn(move || {
             let mut last_err = String::new();
+            let mut last_line = String::new();
             for line in BufReader::new(stderr).lines().map_while(Result::ok) {
                 let _ = app2.emit("dl:log", &line);
                 if line.starts_with("ERROR") {
-                    last_err = line;
+                    last_err = line.clone();
                 }
+                last_line = line;
             }
-            last_err
+            (last_err, last_line)
         });
 
         let mut file_path = String::new();
@@ -171,7 +176,7 @@ async fn download(
             let _ = app.emit("dl:log", &line);
         }
 
-        let last_err = err_reader.join().unwrap_or_default();
+        let (last_err, last_line) = err_reader.join().unwrap_or_default();
         let status = {
             let state = app.state::<Running>();
             let mut guard = state.0.lock().unwrap();
@@ -180,12 +185,21 @@ async fn download(
                 None => return Err("中止しました".into()),
             }
         };
-        if status.success() && !file_path.is_empty() {
-            Ok(file_path)
+        let _ = app.emit(
+            "dl:log",
+            format!("[app] exit={:?} file={:?}", status.code(), file_path),
+        );
+        if status.success() {
+            // FILE: 行が取れなかった場合も保存はできているので、保存先フォルダを返す
+            Ok(if file_path.is_empty() { out_dir_fallback } else { file_path })
         } else if !last_err.is_empty() {
             Err(last_err.trim_start_matches("ERROR:").trim().to_string())
         } else {
-            Err("ダウンロードに失敗しました".into())
+            Err(format!(
+                "ダウンロードに失敗しました（終了コード {}）{}",
+                status.code().map(|c| c.to_string()).unwrap_or("不明".into()),
+                if last_line.is_empty() { String::new() } else { format!(": {last_line}") }
+            ))
         }
     })
     .await
