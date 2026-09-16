@@ -137,10 +137,14 @@ async fn download(
 ) -> Result<String, String> {
     let ytdlp = ytdlp_path(&app)?;
     let ffmpeg = sidecar_path("ffmpeg")?;
-    let template = Path::new(&out_dir)
-        .join("%(title)s.%(ext)s")
-        .to_string_lossy()
-        .to_string();
+    // 途中ファイル（.part、結合前の映像/音声、mp3 変換前の音声）は一時フォルダに置き、
+    // 完成した1ファイルだけを保存先に移す
+    let temp_dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| e.to_string())?
+        .join("tmp");
+    std::fs::create_dir_all(&temp_dir).map_err(|e| e.to_string())?;
 
     let mut c = command(&ytdlp);
     // Windows で日本語タイトルをパイプに書く際のエンコードエラーを防ぐ（yt-dlp は Python 製）
@@ -148,8 +152,11 @@ async fn download(
     c.args(["--newline", "--progress", "--no-simulate", "--no-playlist", "--no-colors"])
         .arg("--ffmpeg-location")
         .arg(&ffmpeg)
-        .arg("-o")
-        .arg(&template)
+        .arg("-P")
+        .arg(format!("home:{out_dir}"))
+        .arg("-P")
+        .arg(format!("temp:{}", temp_dir.display()))
+        .args(["-o", "%(title)s.%(ext)s"])
         // 完成したファイルのパスを FILE: 付きで出力させる（後処理・移動の後）
         .args(["--print", "after_move:FILE:%(filepath)s"]);
     if mode == "mp3" {
