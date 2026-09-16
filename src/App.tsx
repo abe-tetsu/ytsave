@@ -11,6 +11,7 @@ type RowState = "wait" | "run" | "ok" | "bad" | "cancel";
 type Row = {
   id: number;
   url: string;
+  mode: Mode;
   state: RowState;
   text?: string; // 完了時はファイル名、失敗時は理由
   path?: string;
@@ -26,11 +27,12 @@ const MARK: Record<RowState, string> = {
 };
 
 let nextId = 1;
-const newRow = (): Row => ({ id: nextId++, url: "", state: "wait" });
+const newRow = (mode: Mode): Row => ({ id: nextId++, url: "", mode, state: "wait" });
+const RESET: Partial<Row> = { state: "wait", text: undefined, path: undefined, percent: undefined };
 
 export default function App() {
-  const [rows, setRows] = useState<Row[]>([newRow()]);
-  const [mode, setMode] = useState<Mode>("mp4");
+  const [mode, setMode] = useState<Mode>("mp4"); // 新しい行の既定。切り替えると全行に適用
+  const [rows, setRows] = useState<Row[]>([newRow("mp4")]);
   const [outDir, setOutDir] = useState("");
   const [running, setRunning] = useState(false);
   const [status, setStatus] = useState("");
@@ -71,12 +73,12 @@ export default function App() {
 
   const addRow = () => {
     focusNew.current = true;
-    setRows((rs) => [...rs, newRow()]);
+    setRows((rs) => [...rs, newRow(mode)]);
   };
   const removeRow = (id: number) =>
-    setRows((rs) => (rs.length === 1 ? [newRow()] : rs.filter((r) => r.id !== id)));
-  const setUrl = (id: number, url: string) =>
-    patchRow(id, { url, state: "wait", text: undefined, path: undefined, percent: undefined });
+    setRows((rs) => (rs.length === 1 ? [newRow(mode)] : rs.filter((r) => r.id !== id)));
+  const setUrl = (id: number, url: string) => patchRow(id, { url, ...RESET });
+  const setRowMode = (id: number, m: Mode) => patchRow(id, { mode: m, ...RESET });
 
   // Enter: 最終行なら行を追加、それ以外は次の行へ
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, i: number) => {
@@ -91,15 +93,9 @@ export default function App() {
     else listRef.current?.querySelectorAll<HTMLInputElement>("input")[i + 1]?.focus();
   };
 
-  // 保存先や形式を変えたら、完了済みの行も再びダウンロード対象に戻す
+  // 保存先を変えたら、完了済みの行も再びダウンロード対象に戻す
   const resetDone = () =>
-    setRows((rs) =>
-      rs.map((r) =>
-        r.state === "ok"
-          ? { ...r, state: "wait", text: undefined, path: undefined, percent: undefined }
-          : r,
-      ),
-    );
+    setRows((rs) => rs.map((r) => (r.state === "ok" ? { ...r, ...RESET } : r)));
 
   const pickDir = async () => {
     const dir = await open({ directory: true, defaultPath: outDir || undefined });
@@ -109,10 +105,11 @@ export default function App() {
     }
   };
 
+  // 上段の形式: 全行に適用（形式が変わった行は再ダウンロード対象に戻す）
   const changeMode = (m: Mode) => {
     if (m === mode) return;
     setMode(m);
-    resetDone();
+    setRows((rs) => rs.map((r) => (r.mode === m ? r : { ...r, mode: m, ...RESET })));
   };
 
   // 未完了（URLあり・完了以外）の行を上から順に落とす
@@ -129,7 +126,7 @@ export default function App() {
       setStatus("準備中…");
       patchRow(t.id, { state: "run", percent: 0, text: undefined });
       try {
-        const path = await invoke<string>("download", { url: t.url.trim(), mode, outDir });
+        const path = await invoke<string>("download", { url: t.url.trim(), mode: t.mode, outDir });
         const name = path.split(/[\\/]/).pop() ?? path;
         patchRow(t.id, { state: "ok", text: path === outDir ? "保存しました" : name, path });
       } catch (e) {
@@ -168,7 +165,7 @@ export default function App() {
     <main className="app">
       <div className="settings">
         <div className="field">
-          <span>形式</span>
+          <span>形式（全行に適用）</span>
           <div className="toggle">
             <button className={mode === "mp4" ? "on" : ""} onClick={() => changeMode("mp4")} disabled={running}>
               動画（mp4）
@@ -204,6 +201,22 @@ export default function App() {
                 placeholder="https://www.youtube.com/watch?v=..."
                 disabled={running}
               />
+              <div className="toggle mini">
+                <button
+                  className={r.mode === "mp4" ? "on" : ""}
+                  onClick={() => setRowMode(r.id, "mp4")}
+                  disabled={running}
+                >
+                  mp4
+                </button>
+                <button
+                  className={r.mode === "mp3" ? "on" : ""}
+                  onClick={() => setRowMode(r.id, "mp3")}
+                  disabled={running}
+                >
+                  mp3
+                </button>
+              </div>
               <span className="trail" title={r.text}>
                 {r.state === "run" &&
                   (status || (r.percent !== undefined ? `${r.percent.toFixed(0)}%` : ""))}

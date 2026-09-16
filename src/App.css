@@ -111,6 +111,11 @@ button.del {
   border-color: #6366f1;
 }
 
+.toggle.mini button {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
 .row {
   display: flex;
   gap: 8px;
@@ -142,7 +147,7 @@ button.del {
 
 .urlrow {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) auto auto;
+  grid-template-columns: 24px minmax(0, 1fr) auto auto auto;
   gap: 8px;
   align-items: center;
   padding: 4px 6px;

@@ -1,6 +1,6 @@
 [package]
 name = "ytsave"
-version = "0.1.7"
+version = "0.1.8"
 description = "YouTube の動画を保存するデスクトップアプリ"
 authors = ["abetetsuya"]
 edition = "2021"
