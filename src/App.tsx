@@ -163,7 +163,9 @@ export default function App() {
       <div className="field">
         <span>保存先</span>
         <div className="row">
-          <code className="path">{outDir || "未選択"}</code>
+          <code className="path">
+            <bdi>{outDir || "未選択"}</bdi>
+          </code>
           <button onClick={pickDir} disabled={running}>
             選ぶ
           </button>
