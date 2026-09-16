@@ -131,9 +131,11 @@ async fn download(
     if mode == "mp3" {
         c.args(["-x", "--audio-format", "mp3", "--audio-quality", "0"]);
     } else {
+        // 編集ソフト（PowerDirector 等）で確実に読める H.264 + AAC を優先する。
+        // YouTube の高画質は AV1 / VP9 が多く、そのまま落とすと映像が再生できないことがある。
         c.args([
             "-f",
-            "bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b",
+            "bv*[vcodec^=avc1][ext=mp4]+ba[acodec^=mp4a][ext=m4a]/bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b",
             "--merge-output-format",
             "mp4",
         ]);
