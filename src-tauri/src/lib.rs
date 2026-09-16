@@ -65,6 +65,30 @@ fn command(path: &Path) -> Command {
     c
 }
 
+/// yt-dlp とその子プロセス（ffmpeg）をまとめて止める。
+/// 親だけ殺すと ffmpeg が残ってファイルを掴み続ける。
+fn kill_tree(child: &mut Child) {
+    let pid = child.id().to_string();
+    #[cfg(windows)]
+    {
+        let _ = command(Path::new("taskkill"))
+            .args(["/PID", &pid, "/T", "/F"])
+            .output();
+    }
+    #[cfg(unix)]
+    {
+        // download() で process_group(0) にしているので、グループごと止められる
+        let _ = Command::new("kill").args(["--", &format!("-{pid}")]).output();
+    }
+    let _ = child.kill();
+}
+
+fn cancel_running(app: &AppHandle) {
+    if let Some(mut child) = app.state::<Running>().0.lock().unwrap().take() {
+        kill_tree(&mut child);
+    }
+}
+
 fn run_capture(path: &Path, args: &[&str]) -> Result<String, String> {
     let out = command(path)
         .args(args)
@@ -141,6 +165,11 @@ async fn download(
         ]);
     }
     c.arg(&url).stdout(Stdio::piped()).stderr(Stdio::piped());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        c.process_group(0);
+    }
     let out_dir_fallback = out_dir.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
@@ -210,9 +239,7 @@ async fn download(
 
 #[tauri::command]
 fn cancel_download(app: AppHandle) {
-    if let Some(mut child) = app.state::<Running>().0.lock().unwrap().take() {
-        let _ = child.kill();
-    }
+    cancel_running(&app);
 }
 
 #[tauri::command]
@@ -242,6 +269,12 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(Running(Mutex::new(None)))
+        // ダウンロード中にウィンドウを閉じても ffmpeg を残さない
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                cancel_running(window.app_handle());
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             download,
             cancel_download,
