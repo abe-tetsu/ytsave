@@ -1,0 +1,58 @@
+name: release
+
+# v* タグを push すると、macOS（Apple Silicon / Intel）と Windows のインストーラを
+# ビルドして GitHub Releases に下書きとして添付する。内容を確認して Publish する。
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            bundles: dmg
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            bundles: dmg
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: nsis
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      - name: Fetch yt-dlp / ffmpeg
+        shell: bash
+        run: scripts/fetch-sidecars.sh ${{ matrix.target }}
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "ytsave ${{ github.ref_name }}"
+          releaseBody: "ダウンロードは下の Assets から。macOS は .dmg、Windows は -setup.exe。"
+          releaseDraft: true
+          args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
